@@ -80,6 +80,9 @@ func (f *File) GetCursor(sheet string) int {
 func (f *File) cursorInc(sheet string) int {
 	f.mx.Lock()
 	defer f.mx.Unlock()
+	if _, ok := f.cursor[sheet]; !ok {
+		f.cursor[sheet] = 1
+	}
 	f.cursor[sheet] = f.cursor[sheet] + 1
 	return f.cursor[sheet]
 }
@@ -202,7 +205,7 @@ func (f *File) setRowValue(sheet string, valueOf reflect.Value) error {
 	return nil
 }
 
-// SetRowsValueByTableHeader  根据表头设置多行数据
+// SetRowsValueByTableHeader 根据表头设置多行数据
 func (f *File) SetRowsValueByTableHeader(sheet string, tableHeaderRow int, slice interface{}) error {
 	valueOf := reflect.ValueOf(slice)
 	th, err := f.getTableHeader(sheet, tableHeaderRow)
@@ -245,7 +248,7 @@ func (f *File) getTableHeader(sheet string, tableHeader int) (map[string]string,
 	return column, nil
 }
 
-// TemplateRenderAllSheet 模板渲染遍历所有sheet
+// TemplateRenderAllSheet 模板渲染遍历所有sheet，注意结构体标签会失效
 func (f *File) TemplateRenderAllSheet(data interface{}) error {
 	for _, sheet := range f.GetSheetList() {
 		if err := f.TemplateRender(sheet, data); err != nil {
@@ -255,7 +258,7 @@ func (f *File) TemplateRenderAllSheet(data interface{}) error {
 	return nil
 }
 
-// TemplateRender 模板渲染
+// TemplateRender 模板渲染，注意结构体标签会失效
 func (f *File) TemplateRender(sheet string, data interface{}) error {
 	if err := f.beforeTemplateRender(sheet, data); err != nil {
 		return err
@@ -327,9 +330,9 @@ func (f *File) TemplateRender(sheet string, data interface{}) error {
 				// TODO 转换成对应的数据类型
 				number, err := cast.ToFloat64E(newCell)
 				if err == nil { // 数字类型
-					err = f.SetCellValue(sheet, GetAxis(i, f.GetCursor(sheet)), number)
+					err = f.SetCellValue(sheet, GetAxis(i+1, f.GetCursor(sheet)), number)
 				} else {
-					err = f.SetCellValue(sheet, GetAxis(i, f.GetCursor(sheet)), newCell)
+					err = f.SetCellValue(sheet, GetAxis(i+1, f.GetCursor(sheet)), newCell)
 				}
 				if err != nil {
 					return err
@@ -350,12 +353,17 @@ func (f *File) TemplateRender(sheet string, data interface{}) error {
 	return nil
 }
 
-// ReadToSlice 读取表格数据放至Slice中
+// ReadToSlice 读取表格数据放至slice中
+//
+// startRow: 开始行
+//
+// endRow: 可选参数，结束行，不传读取到文件结束
 func (f *File) ReadToSlice(sheet string, startRow int, slice interface{}, endRow ...int) error {
 	if reflect.TypeOf(slice).Kind() != reflect.Ptr {
 		return errors.New("invalid value, should be pointer to slice")
 	}
-	value := reflect.ValueOf(slice).Elem()
+	value := reflect.ValueOf(slice).Elem() // slice
+	itemType := value.Type().Elem()        // item type
 
 	var values = make([]reflect.Value, 0)
 
@@ -364,7 +372,7 @@ func (f *File) ReadToSlice(sheet string, startRow int, slice interface{}, endRow
 		return err
 	}
 	defer rows.Close()
-	var rowIndex int
+	var rowIndex = 1
 	for rows.Next() {
 		if rowIndex < startRow {
 			rowIndex++
@@ -377,11 +385,18 @@ func (f *File) ReadToSlice(sheet string, startRow int, slice interface{}, endRow
 		if err != nil {
 			return err
 		}
-		vE := reflect.New(value.Type().Elem()).Elem()
+
+		vE := reflect.New(itemType).Elem()
+		item := vE
+		if itemType.Kind() == reflect.Ptr && vE.IsNil() && vE.CanSet() {
+			// 空指针初始化
+			vE.Set(reflect.New(itemType.Elem()))
+			item = vE.Elem()
+		}
 		// 判断是否空行
 		isEmptyLine := true
 		for i, colCell := range row {
-			if i > vE.NumField()-1 {
+			if i > item.NumField()-1 {
 				break
 			}
 			if len(colCell) > 0 {
@@ -392,10 +407,10 @@ func (f *File) ReadToSlice(sheet string, startRow int, slice interface{}, endRow
 			continue
 		}
 		for i, colCell := range row {
-			if i > vE.NumField()-1 {
+			if i > item.NumField()-1 {
 				break
 			}
-			axis := GetAxis(i+1, rowIndex+1)
+			axis := GetAxis(i+1, rowIndex)
 			formula, err := f.GetCellFormula(sheet, axis)
 			if err != nil {
 				return err
@@ -409,27 +424,27 @@ func (f *File) ReadToSlice(sheet string, startRow int, slice interface{}, endRow
 					colCell = formulaValue
 				}
 			}
-			switch vE.Field(i).Kind() {
+			switch item.Field(i).Kind() {
 			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 				v, err := cast.ToInt64E(colCell)
 				if err != nil {
 					return err
 				}
-				vE.Field(i).SetInt(v)
+				item.Field(i).SetInt(v)
 			case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 				v, err := cast.ToUint64E(colCell)
 				if err != nil {
 					return err
 				}
-				vE.Field(i).SetUint(v)
+				item.Field(i).SetUint(v)
 			case reflect.Float32, reflect.Float64:
 				v, err := cast.ToFloat64E(colCell)
 				if err != nil {
 					return err
 				}
-				vE.Field(i).SetFloat(v)
+				item.Field(i).SetFloat(v)
 			case reflect.String:
-				vE.Field(i).SetString(colCell)
+				item.Field(i).SetString(colCell)
 			default:
 				return fmt.Errorf("unsupported types: %v", vE.Field(i).Kind())
 			}
