@@ -1,5 +1,5 @@
 ## 概述
-对 [Excelize](https://github.com/qax-os/excelize) 进行了简单的封装，方便的读取表格和往表格里面写入数据，大部分情况下，定义好结构体就行， 而不需要在代码里面指定各种坐标，让代码难以维护和阅读
+对 [Excelize](https://github.com/qax-os/excelize) 方便的读取Excel文件和Excel文件里面写入数据，大部分情况下，定义好结构体就行， 而不需要在代码里面指定各种坐标，让代码难以维护和阅读
 > 行和列从1开始算
 
 ## 字段标签
