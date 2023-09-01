@@ -325,7 +325,12 @@ func (f *File) TemplateRender(sheet string, data interface{}) error {
 			newCell := buffer.String()
 			if colCell != newCell {
 				// TODO 转换成对应的数据类型
-				err = f.SetCellValue(sheet, GetAxis(i, f.GetCursor(sheet)), newCell)
+				number, err := cast.ToFloat64E(newCell)
+				if err == nil { // 数字类型
+					err = f.SetCellValue(sheet, GetAxis(i, f.GetCursor(sheet)), number)
+				} else {
+					err = f.SetCellValue(sheet, GetAxis(i, f.GetCursor(sheet)), newCell)
+				}
 				if err != nil {
 					return err
 				}
@@ -426,8 +431,7 @@ func (f *File) ReadToSlice(sheet string, startRow int, slice interface{}, endRow
 			case reflect.String:
 				vE.Field(i).SetString(colCell)
 			default:
-				// TODO
-				return errors.New("不支持的类型")
+				return fmt.Errorf("unsupported types: %v", vE.Field(i).Kind())
 			}
 		}
 		values = append(values, vE)
@@ -466,7 +470,7 @@ func (f *File) beforeTemplateRender(sheet string, data interface{}) error {
 				// 获取名字
 				sub := rangeStartRg.FindStringSubmatch(colCell)
 				if len(sub) < 2 {
-					return fmt.Errorf("range语法错误")
+					return fmt.Errorf("range syntax error")
 				}
 				v := reflect.ValueOf(data)
 				if v.Kind() == reflect.Ptr {
@@ -479,7 +483,7 @@ func (f *File) beforeTemplateRender(sheet string, data interface{}) error {
 					temp = array
 				}
 				if array.Kind() != reflect.Slice && array.Kind() != reflect.Array {
-					return fmt.Errorf("%s非数组", sub[1])
+					return fmt.Errorf("%s non-array", sub[1])
 				}
 				ranges = append(ranges, rangeInfo{
 					CopyRow: rowIndex + 1,
