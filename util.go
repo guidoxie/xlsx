@@ -31,7 +31,7 @@ const (
 func ParseTagSetting(sf reflect.StructField, field int, row ...int) (*TagSetting, error) {
 	settings := map[string]string{}
 	tag := sf.Tag.Get(tagXlsx)
-	if tag == "-" {
+	if tag == "-" || tag == "" {
 		return &TagSetting{Ignore: true}, nil
 	}
 	names := strings.Split(tag, sep)
