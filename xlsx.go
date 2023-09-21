@@ -228,7 +228,7 @@ func (f *File) getTableHeader(sheet string, tableHeader int) (map[string]string,
 	if err != nil {
 		return nil, err
 	}
-	var count int
+	var count = 1
 	for rows.Next() {
 		if count == tableHeader {
 			row, err := rows.Columns()
