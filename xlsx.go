@@ -63,15 +63,24 @@ func OpenBytes(b []byte) (*File, error) {
 }
 
 func (f *File) CloseStreamWriter(sheet ...string) error {
-	for _, s := range sheet {
-		sw, ok := f.writer[s]
-		if !ok {
-			continue
+	if len(sheet) > 0 {
+		for _, s := range sheet {
+			sw, ok := f.writer[s]
+			if !ok {
+				continue
+			}
+			if err := sw.Flush(); err != nil {
+				return err
+			}
+			delete(f.writer, s)
 		}
-		if err := sw.Flush(); err != nil {
-			return err
+	} else {
+		for s, sw := range f.writer {
+			if err := sw.Flush(); err != nil {
+				return err
+			}
+			delete(f.writer, s)
 		}
-		delete(f.writer, s)
 	}
 	return nil
 }
