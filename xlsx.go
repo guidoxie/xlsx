@@ -18,7 +18,8 @@ type Picture []byte // 图片
 
 type File struct {
 	*excelize.File
-	cursor map[string]int // 游标，写到那一行了
+	cursor map[string]int                    // 游标，写到那一行了
+	writer map[string]*excelize.StreamWriter // 流式写入器
 	mx     sync.Mutex
 }
 
@@ -26,6 +27,7 @@ func NewFile() *File {
 	return &File{
 		File:   excelize.NewFile(),
 		cursor: make(map[string]int),
+		writer: make(map[string]*excelize.StreamWriter),
 		mx:     sync.Mutex{},
 	}
 }
@@ -38,10 +40,11 @@ func OpenFile(filename string) (*File, error) {
 	return &File{
 		File:   f,
 		cursor: make(map[string]int),
+		writer: make(map[string]*excelize.StreamWriter),
 		mx:     sync.Mutex{},
 	}, nil
-
 }
+
 func OpenReader(r io.Reader) (*File, error) {
 	f, err := excelize.OpenReader(r)
 	if err != nil {
@@ -50,12 +53,42 @@ func OpenReader(r io.Reader) (*File, error) {
 	return &File{
 		File:   f,
 		cursor: make(map[string]int),
+		writer: make(map[string]*excelize.StreamWriter),
 		mx:     sync.Mutex{},
 	}, nil
 }
 
 func OpenBytes(b []byte) (*File, error) {
 	return OpenReader(bytes.NewBuffer(b))
+}
+
+func (f *File) CloseStreamWriter(sheet ...string) error {
+	for _, s := range sheet {
+		sw, ok := f.writer[s]
+		if !ok {
+			continue
+		}
+		if err := sw.Flush(); err != nil {
+			return err
+		}
+		delete(f.writer, s)
+	}
+	return nil
+}
+
+func (f *File) OpenStreamWriter(sheet string) error {
+	f.mx.Lock()
+	defer f.mx.Unlock()
+	sw, err := f.NewStreamWriter(sheet)
+	if err != nil {
+		return err
+	}
+	f.writer[sheet] = sw
+	return nil
+}
+
+func (f *File) getStreamWriter(sheet string) *excelize.StreamWriter {
+	return f.writer[sheet]
 }
 
 func (f *File) SetCursor(sheet string, cursor int) *File {
@@ -125,9 +158,8 @@ func (f *File) setCellByStruct(sheet string, data reflect.Value, tableHeader map
 			}
 			axis = cells[0]
 		}
-		err = f.SetCellValue(sheet, axis, valueOf.Field(i).Interface())
-		if err != nil {
-			return err
+		cell := &excelize.Cell{
+			Value: valueOf.Field(i).Interface(),
 		}
 		// 设置单元格样式
 		if tag.Style != nil {
@@ -135,9 +167,11 @@ func (f *File) setCellByStruct(sheet string, data reflect.Value, tableHeader map
 			if err != nil {
 				return err
 			}
-			if err := f.SetCellStyle(sheet, axis, axis, sid); err != nil {
-				return err
-			}
+			cell.StyleID = sid
+		}
+		err = f.setCell(sheet, axis, cell)
+		if err != nil {
+			return err
 		}
 		// 设置列宽度
 		if tag.ColWidth > 0 {
@@ -197,7 +231,7 @@ func (f *File) setRowValue(sheet string, valueOf reflect.Value) error {
 			dataTypeOf = dataTypeOf.Elem()
 			dataValueOf = dataValueOf.Elem()
 		}
-		err := f.SetCellValue(sheet, GetAxis(i+1, f.GetCursor(sheet)), dataValueOf.Interface())
+		err := f.setCell(sheet, GetAxis(i+1, f.GetCursor(sheet)), &excelize.Cell{Value: dataValueOf.Interface()})
 		if err != nil {
 			return err
 		}
@@ -565,4 +599,20 @@ func (f *File) GetLastEmptyRow(sheet string) (int, error) {
 		lastRow++
 	}
 	return lastRow, nil
+}
+
+func (f *File) setCell(sheet string, axis string, cell *excelize.Cell) error {
+	if sw := f.getStreamWriter(sheet); sw != nil {
+		return sw.SetRow(axis, []interface{}{cell})
+	}
+	if err := f.File.SetCellValue(sheet, axis, cell.Value); err != nil {
+		return err
+	}
+	if err := f.File.SetCellStyle(sheet, axis, axis, cell.StyleID); err != nil {
+		return err
+	}
+	if err := f.File.SetCellFormula(sheet, axis, cell.Formula); err != nil {
+		return err
+	}
+	return nil
 }

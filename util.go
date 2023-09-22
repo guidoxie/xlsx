@@ -62,7 +62,7 @@ func ParseTagSetting(sf reflect.StructField, field int, row ...int) (*TagSetting
 		switch k {
 		case tagAxis:
 			if len(regexp.MustCompile("\\d+").FindStringSubmatch(v)) == 0 && len(row) > 0 {
-				v += cast.ToString(row[0] + 1)
+				v += cast.ToString(row[0])
 			}
 			res.Axis = v
 		case tagStyle:

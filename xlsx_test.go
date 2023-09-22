@@ -204,3 +204,38 @@ func TestFile_ReadToSlice(t *testing.T) {
 	}
 	fmt.Println(slice[0], slice[1])
 }
+
+func TestFile_OpenStreamWriter(t *testing.T) {
+	type Student struct {
+		Name   string  `xlsx:"axis:A;colWidth:20;style:{\"alignment\":{\"horizontal\":\"center\"}}"`
+		Course string  `xlsx:"axis:B;colWidth:20;style:{\"alignment\":{\"horizontal\":\"center\"}}"`
+		Score  float64 `xlsx:"axis:C;colWidth:20;style:{\"alignment\":{\"horizontal\":\"center\"}}"`
+	}
+	f, err := OpenFile("test/template.xlsx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.OpenStreamWriter("Sheet1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.SetRowValue("Sheet1", []string{"姓名", "课程", "成绩"}); err != nil {
+		t.Fatal(err)
+	}
+	students := make([]*Student, 0)
+	for i := 0; i < 1000540; i++ {
+		students = append(students, &Student{
+			Name:   "小明",
+			Course: "数学",
+			Score:  95.5,
+		})
+	}
+	if err := f.SetRowsValue("Sheet1", students); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.CloseStreamWriter(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.SaveAs("test/set_cell_by_stream.xlsx"); err != nil {
+		t.Fatal(err)
+	}
+}
