@@ -147,7 +147,7 @@ func (f *File) setCellByStruct(sheet string, data reflect.Value, tableHeader map
 		c, ok := tableHeader[tag.Column]
 		if ok {
 			axis = fmt.Sprintf("%s%d", c, f.GetCursor(sheet))
-		} else {
+		} else if len(tableHeader) == 0 {
 			cells := strings.Split(tag.Axis, "-")
 			// 合并单元格
 			if len(cells) == 2 {
@@ -157,6 +157,9 @@ func (f *File) setCellByStruct(sheet string, data reflect.Value, tableHeader map
 				return err
 			}
 			axis = cells[0]
+		}
+		if len(axis) == 0 {
+			continue
 		}
 		cell := &excelize.Cell{
 			Value: valueOf.Field(i).Interface(),
