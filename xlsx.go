@@ -18,16 +18,20 @@ type Picture []byte // 图片
 
 type File struct {
 	*excelize.File
-	cursor map[string]int                    // 游标，写到那一行了
-	writer map[string]*excelize.StreamWriter // 流式写入器
+	cursor map[string]int           // 游标，写到那一行了
+	writer map[string]*StreamWriter // 流式写入器
 	mx     sync.Mutex
+}
+
+type StreamWriter struct {
+	*excelize.StreamWriter // 流式写入器
 }
 
 func NewFile() *File {
 	return &File{
 		File:   excelize.NewFile(),
 		cursor: make(map[string]int),
-		writer: make(map[string]*excelize.StreamWriter),
+		writer: make(map[string]*StreamWriter),
 		mx:     sync.Mutex{},
 	}
 }
@@ -40,7 +44,7 @@ func OpenFile(filename string) (*File, error) {
 	return &File{
 		File:   f,
 		cursor: make(map[string]int),
-		writer: make(map[string]*excelize.StreamWriter),
+		writer: make(map[string]*StreamWriter),
 		mx:     sync.Mutex{},
 	}, nil
 }
@@ -53,7 +57,7 @@ func OpenReader(r io.Reader) (*File, error) {
 	return &File{
 		File:   f,
 		cursor: make(map[string]int),
-		writer: make(map[string]*excelize.StreamWriter),
+		writer: make(map[string]*StreamWriter),
 		mx:     sync.Mutex{},
 	}, nil
 }
@@ -85,18 +89,22 @@ func (f *File) CloseStreamWriter(sheet ...string) error {
 	return nil
 }
 
-func (f *File) OpenStreamWriter(sheet string) error {
+func (f *File) OpenStreamWriter(sheet string) (*StreamWriter, error) {
 	f.mx.Lock()
 	defer f.mx.Unlock()
+	if sw, ok := f.writer[sheet]; ok {
+		return sw, nil
+	}
 	sw, err := f.NewStreamWriter(sheet)
 	if err != nil {
-		return err
+
+		return nil, err
 	}
-	f.writer[sheet] = sw
-	return nil
+	f.writer[sheet] = &StreamWriter{sw}
+	return f.writer[sheet], nil
 }
 
-func (f *File) getStreamWriter(sheet string) *excelize.StreamWriter {
+func (f *File) getStreamWriter(sheet string) *StreamWriter {
 	return f.writer[sheet]
 }
 
@@ -610,9 +618,6 @@ func (f *File) GetLastEmptyRow(sheet string) (int, error) {
 }
 
 func (f *File) setCell(sheet string, axis string, cell *excelize.Cell) error {
-	if sw := f.getStreamWriter(sheet); sw != nil {
-		return sw.SetRow(axis, []interface{}{cell})
-	}
 	if err := f.File.SetCellValue(sheet, axis, cell.Value); err != nil {
 		return err
 	}
@@ -623,4 +628,54 @@ func (f *File) setCell(sheet string, axis string, cell *excelize.Cell) error {
 		return err
 	}
 	return nil
+}
+
+func (s *StreamWriter) SetRowValue(row int, slice []interface{}) error {
+	return s.StreamWriter.SetRow(GetAxis(1, row), slice)
+}
+
+func (s *StreamWriter) SetRowsValueByTableHeader(startRow int, tableHeader []string, slice interface{}) error {
+	valueOf := reflect.ValueOf(slice)
+	for i := 0; i < valueOf.Len(); i++ {
+		row, err := s.structToRow(valueOf.Index(i), tableHeader)
+		if err != nil {
+			return nil
+		}
+		if err := s.SetRowValue(startRow, row); err != nil {
+			return err
+		}
+		startRow++
+	}
+	return nil
+}
+
+func (s *StreamWriter) structToRow(data reflect.Value, tableHeader []string) ([]interface{}, error) {
+	var (
+		typeOf  = data.Type()
+		valueOf = data
+	)
+	if typeOf.Kind() == reflect.Ptr {
+		typeOf = typeOf.Elem()
+		valueOf = valueOf.Elem()
+	}
+	index := make(map[string]int)
+	for i, h := range tableHeader {
+		index[h] = i
+	}
+	res := make([]interface{}, len(tableHeader))
+	for i := 0; i < typeOf.NumField(); i++ {
+		tag, err := ParseTagSetting(typeOf.Field(i), i)
+		if err != nil {
+			return nil, err
+		}
+		if tag.Ignore {
+			continue
+		}
+		c, ok := index[tag.Column]
+		if !ok {
+			continue
+		}
+		res[c] = valueOf.Field(i).Interface()
+	}
+	return res, nil
 }
