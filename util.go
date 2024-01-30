@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 type TagSetting struct {
@@ -28,9 +29,18 @@ const (
 	sep         = ";"
 )
 
+var parseTagSettingCache = sync.Map{}
+
 func ParseTagSetting(sf reflect.StructField, field int, row ...int) (*TagSetting, error) {
-	settings := map[string]string{}
 	tag := sf.Tag.Get(tagXlsx)
+	key := fmt.Sprintf("%s.%d", tag, field)
+	if len(row) > 0 {
+		key = fmt.Sprintf("%s.%d", key, row[0])
+	}
+	if ts, ok := parseTagSettingCache.Load(key); ok {
+		return ts.(*TagSetting), nil
+	}
+	settings := map[string]string{}
 	if tag == "-" || tag == "" {
 		return &TagSetting{Ignore: true}, nil
 	}
@@ -80,6 +90,7 @@ func ParseTagSetting(sf reflect.StructField, field int, row ...int) (*TagSetting
 		res.Axis = GetAxis(field+1, row...)
 	}
 	res.Col = regexp.MustCompile("\\d+").ReplaceAllString(res.Axis, "")
+	parseTagSettingCache.Store(key, res)
 	return res, nil
 }
 
