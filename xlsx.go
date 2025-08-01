@@ -260,10 +260,14 @@ func (f *File) setRowValue(sheet string, valueOf reflect.Value) error {
 }
 
 // SetRowsValueByTableHeader 根据表头设置多行数据
-func (f *File) SetRowsValueByTableHeader(sheet string, tableHeader map[string]string, slice interface{}) error {
+func (f *File) SetRowsValueByTableHeader(sheet string, tableHeaderRow int, slice interface{}) error {
 	valueOf := reflect.ValueOf(slice)
+	th, err := f.getTableHeader(sheet, tableHeaderRow)
+	if err != nil {
+		return err
+	}
 	for i := 0; i < valueOf.Len(); i++ {
-		if err := f.setCellByStruct(sheet, valueOf.Index(i), tableHeader); err != nil {
+		if err := f.setCellByStruct(sheet, valueOf.Index(i), th); err != nil {
 			return err
 		}
 		f.cursorInc(sheet)

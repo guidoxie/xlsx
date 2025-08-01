@@ -92,7 +92,7 @@ func TestFile_SetRowsValueByTableHeader(t *testing.T) {
 			Score:  90.5,
 		},
 	}
-	if err := f.SetCursor("Sheet1", 2).SetRowsValueByTableHeader("Sheet1", nil, slice); err != nil {
+	if err := f.SetCursor("Sheet1", 2).SetRowsValueByTableHeader("Sheet1", 1, slice); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.SaveAs("test/set_rows_value_by_table_header.xlsx"); err != nil {
